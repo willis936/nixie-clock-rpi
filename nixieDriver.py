@@ -11,6 +11,9 @@ fPWM  = 200
 # PWM duty cycle
 dcPWM = 100.0
 
+# enable anti-poisoning routine
+bAntiPoison = True
+
 # GPIO 13, pin 33, PWM1
 pinOE     = 13
 # GPIO 12, pin 32, PWM0
@@ -72,28 +75,17 @@ def stopDriver():
 def decodeDigit(num, bDot):
   # return 10-digit binary representation of digit
 
-  if num == 1:
-    bin = (bDot, True,  False, False, False, False, False, False, False, False, False)
-  elif num == 2:
-    bin = (bDot, False, True,  False, False, False, False, False, False, False, False)
-  elif num == 3:
-    bin = (bDot, False, False, True,  False, False, False, False, False, False, False)
-  elif num == 4:
-    bin = (bDot, False, False, False, True,  False, False, False, False, False, False)
-  elif num == 5:
-    bin = (bDot, False, False, False, False, True,  False, False, False, False, False)
-  elif num == 6:
-    bin = (bDot, False, False, False, False, False, True,  False, False, False, False)
-  elif num == 7:
-    bin = (bDot, False, False, False, False, False, False, True,  False, False, False)
-  elif num == 8:
-    bin = (bDot, False, False, False, False, False, False, False, True,  False, False)
-  elif num == 9:
-    bin = (bDot, False, False, False, False, False, False, False, False, True,  False)
+  if type(num) == int and num < 10:
+    # decode digit
+    bin = ((False,) * (num - 1)) + (True,) + ((False,) * (10 - num))
   elif num == 0:
-    bin = (bDot, False, False, False, False, False, False, False, False, False, True )
+    # 0 is at the end
+    bin = ((False,) * 9) + (True,)
   else:
-    bin = (bDot, False, False, False, False, False, False, False, False, False, False)
+    # no digit if number is invalid
+    bin = (False,) * 10
+  # add dot to beginning of decode
+  bin = (bDot,) + bin
   return bin
 
 def checkPPS():
@@ -129,9 +121,15 @@ def timeToBin():
   if h == 0:
     h = 12
 
-  # value to display for each nixie digit
-  hhmmss = (math.floor(h/10),  h%10, math.floor(m/10),  m%10, math.floor(s/10),  s%10)
-  bDot   = (              PM, False,             True, False,             True,  bPPS)
+  # anti-poisoning routine
+  if bAntiPoison and h < 1 and m == 5:
+    # value to display for each nixie digit
+    hhmmss = (s%10,)   * 6
+    bDot   = (s%3 < 1) * 6
+  else:
+    # value to display for each nixie digit
+    hhmmss = (math.floor(h/10),  h%10, math.floor(m/10),  m%10, math.floor(s/10),  s%10)
+    bDot   = (              PM, False,             True, False,             True,  bPPS)
 
   bin = ()
   for iDigit in range(len(hhmmss)):
@@ -223,8 +221,6 @@ while True:
     if GPIO.gpio_function(pinStrobe) == GPIO.OUT:
       # disable strobe output when PPS is valid
       GPIO.setup(pinStrobe, GPIO.IN)
-
-  # anti-poisoning routine
 
   # wait until next second
   time.sleep(1 - time.time()%1)
