@@ -1,4 +1,9 @@
 #!/bin/bash
 
+sudo apt update
+sudo apt install pigpiod
+sudo systemctl enable pigpiod
+sudo systemctl start pigpiod
+
 python -m pip install --upgrade RPi.GPIO pigpio
 sudo python /usr/local/bin/nixieDriver.py
