@@ -1,18 +1,10 @@
 import RPi.GPIO as GPIO
 import pigpio
 import time, datetime
-import os, sys, signal, subprocess, threading
+import os, sys, signal, subprocess, threading, gc
 import math
 
 # constants
-
-# PWM frequency
-fPWM  = 200
-# PWM duty cycle
-dcPWM = 100.0
-
-# enable anti-poisoning routine
-bAntiPoison = True
 
 # GPIO 13, pin 33, PWM1
 pinOE     = 13
@@ -27,6 +19,22 @@ pins = (pinStrobe, pinClock, pinData)
 
 # digits with decimal not connected, hhmmss, 0-indexed
 digitNoDecimal = (1, 3)
+
+
+# PWM frequency
+fPWM  = 200
+# PWM duty cycle
+dcPWM = 100.0
+# offset (seconds) to strobe prior to start-of-second
+tPreEmpt = 30E-6
+# offset (seconds) for python self-time
+tCode = 4E-6
+# offset (seconds) from start-of-second to start busy-wait
+tBusyWindow = 20E-3
+
+
+# enable anti-poisoning routine
+bAntiPoison = True
 
 # number of bits in shift register
 nBitsRegister = 64
@@ -59,9 +67,9 @@ def initDriver():
     GPIO.setup(pinInit, GPIO.OUT)
     GPIO.output(pinInit, GPIO.LOW)
 
-  print("Starting pigpiod.")
-  global gpioProcess
-  gpioProcess = subprocess.Popen(["sudo","pigpiod","-v"])
+  #print("Starting pigpiod.")
+  #global gpioProcess
+  #gpioProcess = subprocess.Popen(["sudo","pigpiod","-v"])
 
 def stopDriver():
   print("Stopping PWM on pin %2d."%(pinOE))
@@ -97,9 +105,7 @@ def checkPPS():
     time.sleep(1.05)
     ppsProcess.terminate()
     ppsOutput = str(ppsProcess.stdout.peek())
-    #ppsProcess.wait()
     bPPS = ppsOutput.find("sequence") != -1
-    #print("PPS: " + str(bPPS))
 
     if bStopThreads:
       print("Stopping PPS checking thread.")
@@ -182,6 +188,10 @@ def updateShiftRegister():
 
 # main function
 
+# set process affinity to highest
+os.nice(40)
+print("Nice value of the process: %2d / %2d"%(os.nice(0), 19))
+
 # set up signal handlers
 signal.signal(signal.SIGINT,  signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
@@ -204,28 +214,38 @@ print("PWM (f = %d Hz, dc = %.1f %%) starting on pin %2d."%(fPWM, dcPWM, pinOE))
 time.sleep(1 - time.time()%1)
 
 while True:
-  tStartSecond = time.time()
+  # wait until 0.10 second
+  time.sleep(0.10 - time.time()%1)
 
   # wait until 0.25 second
   time.sleep(0.25 - time.time()%1)
 
   # lower strobe
-  if GPIO.gpio_function(pinStrobe) == GPIO.OUT:
-    GPIO.output(pinStrobe, GPIO.LOW)
+  GPIO.output(pinStrobe, GPIO.LOW)
 
   # update shift register
   updateShiftRegister()
 
-  # handle inconsistent PPS behavior
-  if bPPS:
-    if GPIO.gpio_function(pinStrobe) == GPIO.OUT:
-      # disable strobe output when PPS is valid
-      GPIO.setup(pinStrobe, GPIO.IN)
+  # run garbage collection
+  gc.collect()
 
-  # wait until next second
-  time.sleep(1 - time.time()%1)
+  # wait until next second, minus busy-wait window
+  time.sleep(1 - time.time()%1 - tBusyWindow)
+
+  # busy-wait until pre-empt time
+  while True:
+    if (1 - time.time()%1 <= tCode + tPreEmpt):
+      break
+
+  tErr = 1 - time.time()%1 - tPreEmpt
+  if tErr > 0:
+    tErr = tErr%1
+  print("pre-empt error: %3.3f us"%(tErr * 1E6))
 
   # strobe output
-  if GPIO.gpio_function(pinStrobe) == GPIO.OUT:
-    print("Strobing output.")
-    GPIO.output(pinStrobe, GPIO.HIGH)
+  GPIO.output(pinStrobe, GPIO.HIGH)
+
+  # sleep until start of second
+  tEndOfSecond = time.time()%1
+  if tEndOfSecond > 0.5 and tEndOfSecond < (1 - tCode):
+    time.sleep(1 - tEndOfSecond)
