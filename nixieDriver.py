@@ -2,7 +2,7 @@ import RPi.GPIO as GPIO
 import pigpio
 import time, datetime
 import os, sys, signal, subprocess, threading, gc
-import math
+import math, numpy
 
 # constants
 
@@ -31,6 +31,10 @@ tPreEmpt = 30E-6
 tCode = 4E-6
 # offset (seconds) from start-of-second to start busy-wait
 tBusyWindow = 20E-3
+# busy waiter threshold (nanoseconds)
+tBusyThresh = (1 - tCode - tPreEmpt) * 1E9
+# max number of samples for stats
+nMaxStats = 60 * 60 * 24
 
 
 # enable anti-poisoning routine
@@ -48,9 +52,20 @@ bPPS = False
 # shared variable to stop threads
 bStopThreads = False
 
+# shared variable to track timing error
+global tErr
+tErr = []
+
+
 # local functions
 
 def signal_handler(sig, frame):
+  # report timing error stats
+  tErrArr = numpy.asarray(tErr)
+  print("Timing error stats, us")
+  print("N: %6d, mean: %7.3f, std: %7.3f"%(tErrArr.size, tErrArr.mean(), tErrArr.std()))
+  print("max: %7.3f, min: %7.3f"%(tErrArr.max(), tErrArr.min()))
+
   # clean up and exit
   print("Cleaning up.")
   global bStopThreads
@@ -67,16 +82,9 @@ def initDriver():
     GPIO.setup(pinInit, GPIO.OUT)
     GPIO.output(pinInit, GPIO.LOW)
 
-  #print("Starting pigpiod.")
-  #global gpioProcess
-  #gpioProcess = subprocess.Popen(["sudo","pigpiod","-v"])
-
 def stopDriver():
   print("Stopping PWM on pin %2d."%(pinOE))
   pPWM.stop()
-  print("Stopping pigpiod.")
-  gpioProcess.terminate()
-  gpioProcess.wait()
   print("Freeing GPIO.")
   GPIO.cleanup()
 
@@ -188,8 +196,9 @@ def updateShiftRegister():
 
 # main function
 
-# set process affinity to highest
+# increase process affinity
 os.nice(40)
+os.nice(-3)
 print("Nice value of the process: %2d / %2d"%(os.nice(0), 19))
 
 # set up signal handlers
@@ -226,21 +235,24 @@ while True:
   # update shift register
   updateShiftRegister()
 
-  # run garbage collection
+  # run garbage collection just before a long wait
   gc.collect()
 
   # wait until next second, minus busy-wait window
   time.sleep(1 - time.time()%1 - tBusyWindow)
 
   # busy-wait until pre-empt time
-  while True:
-    if (1 - time.time()%1 <= tCode + tPreEmpt):
-      break
+  while time.time_ns()%1E9 < tBusyThresh:
+    pass
 
-  tErr = 1 - time.time()%1 - tPreEmpt
-  if tErr > 0:
-    tErr = tErr%1
-  print("pre-empt error: %3.3f us"%(tErr * 1E6))
+  tErrTmp = 1 - time.time()%1 - tPreEmpt
+  if tErrTmp > 0.5:
+    tErrTmp = 1 - tErrTmp
+  tErrTmp = tErrTmp * 1E6
+  while len(tErr) >= nMaxStats:
+    tErr.pop(0)
+  tErr.append(tErrTmp)
+  print("pre-empt error: %3.3f us"%tErrTmp)
 
   # strobe output
   GPIO.output(pinStrobe, GPIO.HIGH)
