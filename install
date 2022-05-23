@@ -1,0 +1,9 @@
+#!/bin/bash
+
+# clone/update repo
+git clone https://github.com/willis936/nixie-clock-rpi /usr/local/src/nixie-clock-rpi
+cd /usr/local/src/nixie-clock-rpi
+git pull
+
+# copy scripts to bin directory
+sudo cp nixieDriver* getTz* /usr/local/bin
