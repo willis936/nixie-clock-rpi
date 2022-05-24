@@ -198,7 +198,6 @@ def updateShiftRegister():
 
 # increase process affinity
 os.nice(40)
-os.nice(-3)
 print("Nice value of the process: %2d / %2d"%(os.nice(0), 19))
 
 # set up signal handlers
