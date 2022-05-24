@@ -1,9 +1,23 @@
 #!/bin/bash
 
-# clone/update repo
-git clone https://github.com/willis936/nixie-clock-rpi /usr/local/src/nixie-clock-rpi
-cd /usr/local/src/nixie-clock-rpi
+# update repo
 git pull
+
+# install dependencies
+sudo apt update
+sudo apt -y install pigpiod gpsd gpsd-clients gpsd-tools llvm-11
+sudo LLVM_CONFIG=llvm-config-11 python -m pip install --upgrade timezonefinder[numba] gpsd-py3 RPi.GPIO pigpio
+# start GPIO daemon
+sudo systemctl enable pigpiod
+sudo systemctl start pigpiod
 
 # copy scripts to bin directory
 sudo cp nixieDriver* getTz* /usr/local/bin
+
+
+# link timezone setting script to cron and init
+sudo ln -s /usr/local/bin/getTz /etc/cron.hourly/
+sudo ln -s /usr/local/bin/getTz /etc/init.d/
+
+# link the nixieDriver to init.d
+sudo ln -s /usr/local/bin/nixieDriver /etc/init.d/
