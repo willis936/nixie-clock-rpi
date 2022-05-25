@@ -6,7 +6,7 @@ git pull
 # install dependencies
 sudo apt update
 sudo apt -y install pigpiod gpsd gpsd-clients gpsd-tools llvm-11
-sudo LLVM_CONFIG=llvm-config-11 python -m pip install --upgrade timezonefinder[numba] gpsd-py3 RPi.GPIO pigpio psutil
+sudo LLVM_CONFIG=llvm-config-11 python -m pip install --upgrade timezonefinder[numba] gpsd-py3 RPi.GPIO pigpio
 # start GPIO daemon
 sudo systemctl enable pigpiod
 sudo systemctl start pigpiod
