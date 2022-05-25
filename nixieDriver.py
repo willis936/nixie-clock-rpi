@@ -204,7 +204,7 @@ print("  nice: %2d / %2d"%(os.nice(0), 19))
 # enforce realtime I/O priority
 p = psutil.Process()
 print(str(p.ionice()))
-p.ionice(psutil.IOPRIO_CLASS_RT, value=2)
+p.ionice(psutil.IOPRIO_CLASS_RT, value=3)
 print(str(p.ionice()))
 
 # set static CPU affinity to avoid core jumps
