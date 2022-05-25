@@ -1,4 +1,4 @@
 #!/bin/bash
 
-python -m pip install --upgrade RPi.GPIO pigpio
+sudo python -m pip install --upgrade RPi.GPIO pigpio psutil
 sudo python /usr/local/bin/nixieDriver.py

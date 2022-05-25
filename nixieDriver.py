@@ -1,7 +1,7 @@
 import RPi.GPIO as GPIO
 import pigpio
 import time, datetime
-import os, sys, signal, subprocess, threading, gc
+import os, sys, psutil, signal, subprocess, threading, gc
 import math, numpy
 
 # constants
@@ -196,9 +196,21 @@ def updateShiftRegister():
 
 # main function
 
-# increase process affinity
+# increase process priority
+print("  nice: %2d / %2d"%(os.nice(0), 19))
 os.nice(40)
-print("Nice value of the process: %2d / %2d"%(os.nice(0), 19))
+print("  nice: %2d / %2d"%(os.nice(0), 19))
+
+# enforce realtime I/O priority
+p = psutil.Process()
+print(str(p.ionice()))
+p.ionice(psutil.IOPRIO_CLASS_RT, value=0)
+print(str(p.ionice()))
+
+# set static CPU affinity to avoid core jumps
+print("CPU affinity: %s."%str(os.sched_getaffinity(0)))
+os.sched_setaffinity(0, {0})
+print("CPU affinity: %s."%str(os.sched_getaffinity(0)))
 
 # set up signal handlers
 signal.signal(signal.SIGINT,  signal_handler)
