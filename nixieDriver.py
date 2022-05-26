@@ -1,7 +1,7 @@
 import RPi.GPIO as GPIO
 import pigpio
 import time, datetime
-import os, sys, signal, subprocess, threading, gc
+import os, sys, psutil, signal, subprocess, threading, gc
 import math, numpy
 
 # constants
@@ -28,7 +28,7 @@ dcPWM = 100.0
 # offset (seconds) to strobe prior to start-of-second
 tPreEmpt = 30E-6
 # offset (seconds) for python self-time
-tCode = 5E-6
+tCode = 3E-6
 # offset (seconds) from start-of-second to start busy-wait
 tBusyWindow = 20E-3
 # busy waiter threshold (nanoseconds)
@@ -201,10 +201,11 @@ print("nice: %2d / %2d"%(os.nice(0), 19))
 os.nice(40)
 print("nice: %2d / %2d"%(os.nice(0), 19))
 
-# set static CPU affinity to avoid core jumps
-print("CPU affinity: %s."%str(os.sched_getaffinity(0)))
-os.sched_setaffinity(0, {0})
-print("CPU affinity: %s."%str(os.sched_getaffinity(0)))
+# enforce realtime I/O priority
+p = psutil.Process()
+print(str(p.ionice()))
+p.ionice(psutil.IOPRIO_CLASS_RT, value=0)
+print(str(p.ionice()))
 
 # set up signal handlers
 signal.signal(signal.SIGINT,  signal_handler)
