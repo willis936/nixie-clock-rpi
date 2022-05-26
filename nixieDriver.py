@@ -1,7 +1,7 @@
 import RPi.GPIO as GPIO
 import pigpio
 import time, datetime
-import os, sys, psutil, signal, subprocess, threading, gc
+import os, sys, signal, subprocess, threading, gc
 import math, numpy
 
 # constants
@@ -200,12 +200,6 @@ def updateShiftRegister():
 print("nice: %2d / %2d"%(os.nice(0), 19))
 os.nice(40)
 print("nice: %2d / %2d"%(os.nice(0), 19))
-
-# enforce realtime I/O priority
-p = psutil.Process()
-print(str(p.ionice()))
-p.ionice(psutil.IOPRIO_CLASS_RT, value=0)
-print(str(p.ionice()))
 
 # set up signal handlers
 signal.signal(signal.SIGINT,  signal_handler)
