@@ -14,8 +14,8 @@ pinStrobe = 12
 pinClock  = 16
 # GPIO 15, pin 22
 pinData   = 15
-# all pins to drive
-pins = (pinStrobe, pinClock, pinData)
+# all pins to drive except ones handled by hardware timers
+pins = (pinClock, pinData)
 
 # digits with decimal not connected, hhmmss, 0-indexed
 digitNoDecimal = (1, 3)
@@ -27,15 +27,6 @@ fPWM  = 200
 dcPWM = 100.0
 # offset (seconds) to strobe prior to start-of-second
 tPreEmpt = 30E-6
-# offset (seconds) for python self-time
-tCode = 3E-6
-# offset (seconds) from start-of-second to start busy-wait
-tBusyWindow = 20E-3
-# busy waiter threshold (nanoseconds)
-tBusyThresh = (1 - tCode - tPreEmpt) * 1E9
-# max number of samples for stats
-nMaxStats = 60 * 60 * 24
-
 
 # enable anti-poisoning routine
 bAntiPoison = True
@@ -46,26 +37,16 @@ nBitsRegister = 64
 fClock = nBitsRegister * 4
 tClock = 1 / float(fClock)
 
-# shared variable that gets updated by checkPPS in a separate thread
-global bPPS
-bPPS = False
+# shared variable that gets updated by checkPPSIn in a separate thread
+global bPPSIn
+bPPSIn = False
 # shared variable to stop threads
 bStopThreads = False
-
-# shared variable to track timing error
-global tErr
-tErr = []
 
 
 # local functions
 
 def signal_handler(sig, frame):
-  # report timing error stats
-  tErrArr = numpy.asarray(tErr)
-  print("Timing error stats, us")
-  print("N: %6d, mean: %7.3f, std: %7.3f"%(tErrArr.size, tErrArr.mean(), tErrArr.std()))
-  print("max: %7.3f, min: %7.3f"%(tErrArr.max(), tErrArr.min()))
-
   # clean up and exit
   print("Cleaning up.")
   global bStopThreads
@@ -104,21 +85,33 @@ def decodeDigit(num, bDot):
   bin = (bDot,) + bin
   return bin
 
-def checkPPS():
+def checkPPSIn():
   print("Starting PPS checking thread.")
-  global bPPS
+  global bPPSIn
   while True:
     # look for output indicative of PPS from ppstest program
-    ppsProcess = subprocess.Popen(["sudo","ppstest","/dev/pps0"], stdout=subprocess.PIPE)
+    ppsInProcess = subprocess.Popen(["sudo","ppstest","/dev/pps0"], stdout=subprocess.PIPE)
     time.sleep(1.05)
-    ppsProcess.terminate()
-    ppsOutput = str(ppsProcess.stdout.peek())
-    bPPS = ppsOutput.find("sequence") != -1
+    ppsInProcess.terminate()
+    ppsInOutput = str(ppsInProcess.stdout.peek())
+    bPPSIn = ppsInOutput.find("sequence") != -1
 
     if bStopThreads:
       print("Stopping PPS checking thread.")
-      ppsProcess.terminate()
-      ppsProcess.wait()
+      ppsInProcess.terminate()
+      ppsInProcess.wait()
+      break
+
+def drivePPSOut():
+  print("Starting PPS driving thread.")
+  ppsOutProcess = subprocess.Popen(["sudo","pps -g %d -e %d"%(pinStrobe, tPreEmpt)], stdout=subprocess.PIPE)
+  while True:
+    time.sleep(1.05)
+
+    if bStopThreads:
+      print("Stopping PPS driving thread.")
+      ppsOutProcess.terminate()
+      ppsOutProcess.wait()
       break
 
 def timeToBin():
@@ -142,8 +135,8 @@ def timeToBin():
     bDot   = (s%3 < 1) * 6
   else:
     # value to display for each nixie digit
-    hhmmss = (math.floor(h/10),  h%10, math.floor(m/10),  m%10, math.floor(s/10),  s%10)
-    bDot   = (              PM, False,             True, False,             True,  bPPS)
+    hhmmss = (math.floor(h/10),  h%10, math.floor(m/10),  m%10, math.floor(s/10),    s%10)
+    bDot   = (              PM, False,             True, False,             True,  bPPSIn)
 
   bin = ()
   for iDigit in range(len(hhmmss)):
@@ -206,8 +199,12 @@ signal.signal(signal.SIGINT,  signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 # start PPS checking
-threadPPS = threading.Thread(target = checkPPS)
-threadPPS.start()
+threadPPSIn = threading.Thread(target = checkPPSIn)
+threadPPSIn.start()
+
+# start PPS driving
+threadPPSOut = threading.Thread(target = drivePPSOut)
+threadPPSOut.start()
 
 # initialize pins
 initDriver()
@@ -238,26 +235,5 @@ while True:
   # run garbage collection just before a long wait
   gc.collect()
 
-  # wait until next second, minus busy-wait window
-  time.sleep(1 - time.time()%1 - tBusyWindow)
-
-  # busy-wait until pre-empt time
-  while time.time_ns()%1E9 < tBusyThresh:
-    pass
-
-  tErrTmp = 1 - time.time()%1 - tPreEmpt
-  if tErrTmp > 0.5:
-    tErrTmp = 1 - tErrTmp
-  tErrTmp = tErrTmp * 1E6
-  while len(tErr) >= nMaxStats:
-    tErr.pop(0)
-  tErr.append(tErrTmp)
-  print("pre-empt error: %3.3f us"%tErrTmp)
-
-  # strobe output
-  GPIO.output(pinStrobe, GPIO.HIGH)
-
   # sleep until start of second
-  tEndOfSecond = time.time()%1
-  if tEndOfSecond > 0.5 and tEndOfSecond < (1 - tCode):
-    time.sleep(1 - tEndOfSecond)
+  time.sleep(1 - time.time()%1)
