@@ -12,18 +12,20 @@
 pps.c
 2020-09-18
 Public Domain
+http://abyz.me.uk/rpi/pigpio/examples.html#C_pps_c
 
-gcc -o pps pps.c -lpigpio
+gcc -o pps-out pps.c -lpigpio
 
-sudo ./pps
+sudo ./pps-out
 
 */
 
-#define GPIO    4   /* gpio for output pulse */
-#define LEVEL   1   /* pulse high or low */
-#define PULSE 200   /* pulse length in microseconds */
-#define SECONDS 1   /* pulse every second */
-#define SLACK  5000 /* slack period to correct time */
+#define GPIO         4 /* gpio for output pulse */
+#define LEVEL        1 /* pulse high or low */
+#define PULSE   100000 /* pulse length in microseconds */
+#define SECONDS      1 /* pulse every second */
+#define SLACK     5000 /* slack period to correct time */
+#define EARLY       30 /* number of us to send PPS prior to start-of-second */
 
 #define MILLION 1000000
 
@@ -31,6 +33,7 @@ static int g_gpio    = GPIO;
 static int g_plevel  = LEVEL;
 static int g_plength = PULSE;
 static int g_seconds = SECONDS;
+static int g_early   = EARLY;
 
 static int g_interval;
 
@@ -54,14 +57,15 @@ void usage()
 {
    fprintf(stderr, "\n" \
       "Usage: sudo ./pps [OPTION] ...\n"\
-      "   -g 0-31   gpio (%d)\n"\
-      "   -l 0,1    pulse level (%d)\n"\
-      "   -m 1-5000 pulse micros (%d)\n"\
-      "   -s 1-60   interval seconds (%d)\n"\
+      "   -g 0-31     gpio (%d)\n"\
+      "   -l 0,1      pulse level (%d)\n"\
+      "   -m 1-500000 pulse micros (%d)\n"\
+      "   -s 1-60     interval seconds (%d)\n"\
+      "   -e 0-5000   pre-empt SOS (%d)\n"\
       "EXAMPLE\n"\
       "sudo ./pps -g 23 -s 5\n"\
       "  Generate pulse every 5 seconds on gpio 23.\n"\
-   "\n", GPIO, LEVEL, PULSE, SECONDS);
+   "\n", GPIO, LEVEL, PULSE, SECONDS, EARLY);
 }
 
 static void initOpts(int argc, char *argv[])
@@ -88,7 +92,7 @@ static void initOpts(int argc, char *argv[])
 
          case 'm':
             i = atoi(optarg);
-            if ((i > 0) && (i<=5000)) g_plength = i;
+            if ((i > 0) && (i<=500000)) g_plength = i;
             else fatal("invalid -m option (%d)", i);
             break;
 
@@ -96,6 +100,12 @@ static void initOpts(int argc, char *argv[])
             i = atoi(optarg);
             if ((i > 0) && (i<=60)) g_seconds = i;
             else fatal("invalid -s option (%d)", i);
+            break;
+
+         case 'e':
+            i = atoi(optarg);
+            if ((i > 0) && (i<=5000)) g_early = i;
+            else fatal("invalid -e option (%d)", i);
             break;
 
          default: /* '?' */
@@ -167,7 +177,7 @@ void callback(int gpio, int level, uint32_t tick)
       {
          /* correct if early */
          if (stamp_micro > (g_interval / 2)) stamp_micro -= g_interval;
-         offby  = stamp_micro - (stamp_tick - pulse_tick);
+         offby  = stamp_micro - (stamp_tick - pulse_tick) + g_early;
          drift += offby/2; /* correct drift, bit of lag */
       }
       else
@@ -277,5 +287,3 @@ int main(int argc, char *argv[])
 
    gpioTerminate();
 }
-
-

@@ -7,12 +7,12 @@ git pull
 sudo apt update
 sudo apt -y install pigpiod gpsd gpsd-clients gpsd-tools llvm-11
 sudo LLVM_CONFIG=llvm-config-11 python -m pip install --upgrade timezonefinder[numba] gpsd-py3 RPi.GPIO pigpio
-# start GPIO daemon
-sudo systemctl enable pigpiod
-sudo systemctl start pigpiod
+
+# build pps driver
+gcc -o pps pps.c -lpigpio
 
 # copy scripts to bin directory
-sudo cp nixieDriver* getTz* /usr/local/bin
+sudo cp nixieDriver nixieDriver.py getTz getTz.py pps /usr/local/bin
 
 
 # link timezone setting script to cron and init
