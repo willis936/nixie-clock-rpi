@@ -25,7 +25,7 @@ sudo ./pps-out
 #define PULSE   100000 /* pulse length in microseconds */
 #define SECONDS      1 /* pulse every second */
 #define SLACK     5000 /* slack period to correct time */
-#define EARLY       30 /* number of us to send PPS prior to start-of-second */
+#define EARLY        0 /* number of us to send PPS prior to start-of-second */
 
 #define MILLION 1000000
 
@@ -72,7 +72,7 @@ static void initOpts(int argc, char *argv[])
 {
    int i, opt;
 
-   while ((opt = getopt(argc, argv, "g:l:m:s:")) != -1)
+   while ((opt = getopt(argc, argv, "g:l:m:s:e:")) != -1)
    {
       i = -1;
 

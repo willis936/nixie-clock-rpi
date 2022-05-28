@@ -104,7 +104,10 @@ def checkPPSIn():
 
 def drivePPSOut():
   print("Starting PPS driving thread.")
-  ppsOutProcess = subprocess.Popen(["sudo","pps -g %d -e %d"%(pinStrobe, tPreEmpt)], stdout=subprocess.PIPE)
+
+  strCall = ["sudo","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(0.1*1E6),"-l","1","-s","1"]
+  ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE)
+
   while True:
     time.sleep(1.05)
 
@@ -191,7 +194,7 @@ def updateShiftRegister():
 
 # increase process priority
 print("nice: %2d / %2d"%(os.nice(0), 19))
-os.nice(40)
+os.nice(10)
 print("nice: %2d / %2d"%(os.nice(0), 19))
 
 # set up signal handlers
@@ -205,6 +208,7 @@ threadPPSIn.start()
 # start PPS driving
 threadPPSOut = threading.Thread(target = drivePPSOut)
 threadPPSOut.start()
+time.sleep(0.1)
 
 # initialize pins
 initDriver()
@@ -225,9 +229,6 @@ while True:
 
   # wait until 0.25 second
   time.sleep(0.25 - time.time()%1)
-
-  # lower strobe
-  GPIO.output(pinStrobe, GPIO.LOW)
 
   # update shift register
   updateShiftRegister()
