@@ -2,6 +2,7 @@ import RPi.GPIO as GPIO
 import pigpio
 import time, datetime
 import os, sys, signal, subprocess, threading, gc
+from contextlib import contextmanager,redirect_stderr,redirect_stdout
 import math, numpy
 
 # constants
@@ -55,7 +56,15 @@ def signal_handler(sig, frame):
   print("Exiting.")
   sys.exit(0)
 
+@contextmanager
+def suppress_stdout_stderr():
+  """A context manager that redirects stdout and stderr to devnull"""
+  with open(os.devnull, 'w') as fnull:
+    with redirect_stderr(fnull) as err, redirect_stdout(fnull) as out:
+      yield (err, out)
+
 def initDriver():
+  waitForPigpio()
   GPIO.setmode(GPIO.BOARD)
   for pinInit in pins:
     print("Initializing GPIO %2d."%(pinInit))
@@ -68,6 +77,24 @@ def stopDriver():
   pPWM.stop()
   print("Freeing GPIO.")
   GPIO.cleanup()
+
+def waitForPigpio():
+  # wait for pigpiod to come up
+  maxTries = 200
+  tSleep   = 0.01
+
+  bKeepTrying = True
+  nTries = 0
+  while bKeepTrying:
+    nTries += 1
+    with suppress_stdout_stderr():
+      bSucc = pigpio.pi().connected
+    if bSucc or nTries >= maxTries:
+      bKeepTrying = False
+    else:
+      time.sleep(tSleep)
+
+  return bSucc
 
 def decodeDigit(num, bDot):
   # return 10-digit binary representation of digit
@@ -208,7 +235,6 @@ threadPPSIn.start()
 # start PPS driving
 threadPPSOut = threading.Thread(target = drivePPSOut)
 threadPPSOut.start()
-time.sleep(0.1)
 
 # initialize pins
 initDriver()
@@ -224,9 +250,6 @@ print("PWM (f = %d Hz, dc = %.1f %%) starting on pin %2d."%(fPWM, dcPWM, pinOE))
 time.sleep(1 - time.time()%1)
 
 while True:
-  # wait until 0.10 second
-  time.sleep(0.10 - time.time()%1)
-
   # wait until 0.25 second
   time.sleep(0.25 - time.time()%1)
 
