@@ -28,6 +28,9 @@ fPWM  = 200
 dcPWM = 100.0
 # offset (seconds) to strobe prior to start-of-second
 tPreEmpt = 30E-6
+# max number of samples for stats
+nMaxStats = 60 * 60 * 24
+
 
 # enable anti-poisoning routine
 bAntiPoison = True
@@ -44,10 +47,21 @@ bPPSIn = False
 # shared variable to stop threads
 bStopThreads = False
 
+# shared variable to track timing error
+global tErr
+tErr = []
+
 
 # local functions
 
 def signal_handler(sig, frame):
+  # report timing error stats
+  tErrArr = numpy.asarray(tErr)
+  if tErrArr.size > 0:
+    print("Timing error stats, us")
+    print("N: %6d, mean: %7.3f, std: %7.3f"%(tErrArr.size, tErrArr.mean(), tErrArr.std()))
+    print("max: %7.3f, min: %7.3f"%(tErrArr.max(), tErrArr.min()))
+
   # clean up and exit
   print("Cleaning up.")
   global bStopThreads
@@ -115,28 +129,36 @@ def decodeDigit(num, bDot):
 def checkPPSIn():
   print("Starting PPS checking thread.")
   global bPPSIn
-  while True:
+  while not bStopThreads:
     # look for output indicative of PPS from ppstest program
-    ppsInProcess = subprocess.Popen(["sudo","ppstest","/dev/pps0"], stdout=subprocess.PIPE)
+    ppsInProcess = subprocess.Popen(["sudo","chrt","--rr","50","ppstest","/dev/pps0"], stdout=subprocess.PIPE)
     time.sleep(1.05)
+    if bStopThreads:
+      print("Stopping PPS checking thread.")
+
     ppsInProcess.terminate()
     ppsInOutput = str(ppsInProcess.stdout.peek())
     bPPSIn = ppsInOutput.find("sequence") != -1
 
-    if bStopThreads:
-      print("Stopping PPS checking thread.")
-      ppsInProcess.terminate()
-      ppsInProcess.wait()
-      break
-
 def drivePPSOut():
   print("Starting PPS driving thread.")
 
-  strCall = ["sudo","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(0.1*1E6),"-l","1","-s","1"]
+  strCall = ["sudo","chrt","--rr","99","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(0.1*1E6),"-l","1","-s","1"]
   ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE)
 
   while True:
-    time.sleep(1.05)
+    time.sleep(0.5)
+
+    # collect timing error stats
+    line = ppsOutProcess.stdout.read()
+    print("test: %s"%line)
+
+    tErrTmp = 1
+    tErrTmp = tErrTmp * 1E6
+    while len(tErr) >= nMaxStats:
+      tErr.pop(0)
+    tErr.append(tErrTmp)
+    print("pre-empt error: %3.3f us"%tErrTmp)
 
     if bStopThreads:
       print("Stopping PPS driving thread.")
@@ -218,11 +240,6 @@ def updateShiftRegister():
 
 
 # main function
-
-# increase process priority
-print("nice: %2d / %2d"%(os.nice(0), 19))
-os.nice(10)
-print("nice: %2d / %2d"%(os.nice(0), 19))
 
 # set up signal handlers
 signal.signal(signal.SIGINT,  signal_handler)
