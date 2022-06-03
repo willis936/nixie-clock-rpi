@@ -224,8 +224,8 @@ int main(int argc, char *argv[])
 
    off = g_interval - (g_plength + SLACK);
 
-   printf("# gpio=%d, level=%d slack=%dus, off=%dus\n",
-      g_gpio, g_plevel, SLACK, off);
+   printf("# gpio=%d, level=%d slack=%dus, off=%dus, early=%dus\n",
+      g_gpio, g_plevel, SLACK, off, g_early);
 
    if (gpioInitialise()<0) return -1;
 
