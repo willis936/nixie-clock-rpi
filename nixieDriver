@@ -1,4 +1,4 @@
 #!/bin/bash
 
 sudo python -m pip install --upgrade RPi.GPIO pigpio
-sudo chrt --rr 90 python /usr/local/bin/nixieDriver.py
+sudo python /usr/local/bin/nixieDriver.py

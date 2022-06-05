@@ -131,7 +131,7 @@ def checkPPSIn():
   global bPPSIn
   while not bStopThreads:
     # look for output indicative of PPS from ppstest program
-    ppsInProcess = subprocess.Popen(["sudo","chrt","--rr","50","ppstest","/dev/pps0"], stdout=subprocess.PIPE)
+    ppsInProcess = subprocess.Popen(["sudo","ppstest","/dev/pps0"], stdout=subprocess.PIPE)
     time.sleep(1.05)
     if bStopThreads:
       print("Stopping PPS checking thread.")
@@ -143,32 +143,33 @@ def checkPPSIn():
 def drivePPSOut():
   print("Starting PPS driving thread.")
 
-  strCall = ["sudo","chrt","--rr","99","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l","1","-s","1"]
+  strCall = ["sudo","chrt","--rr","70","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l","1","-s","1"]
   ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE)
 
   while True:
     # collect timing error stats
     time.sleep(0.5)
 
-    line = ppsOutProcess.stdout.readline().rstrip()
+    bCheckStdOut = True
+    while bCheckStdOut:
+      line = ppsOutProcess.stdout.readline().rstrip()
 
-    try:
-      line = [int(i) for i in line.split()]
-    except:
-      continue
-      pass
-    else:
-      pass
+      bCheckStdOut = len(line) > 1
+      try:
+        line = [int(i) for i in line.split()]
+      except:
+        continue
+      else:
+        pass
 
-    if len(line) != 5:
-      continue
+      if len(line) != 5:
+        continue
 
-    tErrTmp = line[2]
-    tErrTmp = tErrTmp
-    while len(tErr) >= nMaxStats:
-      tErr.pop(0)
-    tErr.append(tErrTmp)
-    print("pre-empt error: %3.3f us"%tErrTmp)
+      tErrTmp = round(line[2])
+      while len(tErr) >= nMaxStats:
+        tErr.pop(0)
+      tErr.append(tErrTmp)
+      print("pre-empt error: %d us"%tErrTmp)
 
     if bStopThreads:
       print("Stopping PPS driving thread.")
