@@ -2,8 +2,11 @@ import RPi.GPIO as GPIO
 import pigpio
 import time, datetime
 import os, sys, signal, subprocess, threading, gc
+from queue import Queue, Empty
 from contextlib import contextmanager,redirect_stderr,redirect_stdout
 import math, numpy
+
+ON_POSIX = 'posix' in sys.builtin_module_names
 
 # constants
 
@@ -77,6 +80,11 @@ def suppress_stdout_stderr():
     with redirect_stderr(fnull) as err, redirect_stdout(fnull) as out:
       yield (err, out)
 
+def enqueue_output(out, queue):
+  for line in iter(out.readline, b''):
+    queue.put(line.decode('utf-8'))
+  out.close()
+
 def initDriver():
   waitForPigpio()
   GPIO.setmode(GPIO.BOARD)
@@ -143,18 +151,41 @@ def checkPPSIn():
 def drivePPSOut():
   print("Starting PPS driving thread.")
 
-  strCall = ["sudo","chrt","--rr","99","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(0.1*1E6),"-l","1","-s","1"]
-  ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE)
+  strCall = ["sudo","chrt","--rr","99","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l","1","-s","1"]
+  ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE, close_fds=ON_POSIX)
+
+  q = Queue()
+  t = threading.Thread(target=enqueue_output, args=(ppsOutProcess.stdout, q))
+  t.daemon = True # thread dies with the program
+  t.start()
 
   while True:
+    # collect timing error stats
     time.sleep(0.5)
 
-    # collect timing error stats
-    line = ppsOutProcess.stdout.read()
-    print("test: %s"%line)
+    try:  line = q.get_nowait() # or q.get(timeout=.1)
+    except Empty:
+      #print("Nada")
+      continue
+    else: # got line
+      print(line)
 
-    tErrTmp = 1
-    tErrTmp = tErrTmp * 1E6
+    try:
+      line = [int(i) for i in line.split()]
+    except:
+      print("Fail")
+      continue
+      pass
+    else:
+      print(len(line))
+      pass
+
+    if len(line) != 5:
+      time.sleep(0.5)
+      continue
+
+    tErrTmp = line[2]
+    tErrTmp = tErrTmp
     while len(tErr) >= nMaxStats:
       tErr.pop(0)
     tErr.append(tErrTmp)
@@ -245,11 +276,11 @@ def updateShiftRegister():
 signal.signal(signal.SIGINT,  signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-# start PPS checking
+# start PPS In checking
 threadPPSIn = threading.Thread(target = checkPPSIn)
 threadPPSIn.start()
 
-# start PPS driving
+# start PPS Out driving
 threadPPSOut = threading.Thread(target = drivePPSOut)
 threadPPSOut.start()
 
