@@ -18,6 +18,9 @@ pinData   = 15
 # all pins to drive except ones handled by hardware timers
 pins = (pinClock, pinData)
 
+# invert logical outputs (needed for level shifters)
+bInvertPins = True
+
 # digits with decimal not connected, hhmmss, 0-indexed
 digitNoDecimal = (1, 3)
 
@@ -52,6 +55,14 @@ global tErr
 tErr = []
 
 
+# handle inverted clock pin driving
+if bInvertPins:
+  clkHi = GPIO.LOW
+  clkLo = GPIO.HIGH
+else:
+  clkHi = GPIO.HIGH
+  clkLo = GPIO.LOW
+
 # local functions
 
 def signal_handler(sig, frame):
@@ -84,7 +95,7 @@ def initDriver():
     print("Initializing GPIO %2d."%(pinInit))
     # set up GPIO pin
     GPIO.setup(pinInit, GPIO.OUT)
-    GPIO.output(pinInit, GPIO.LOW)
+    GPIO.output(pinInit, not bInvertPins)
 
 def stopDriver():
   print("Stopping PWM on pin %2d."%(pinOE))
@@ -143,7 +154,7 @@ def checkPPSIn():
 def drivePPSOut():
   print("Starting PPS driving thread.")
 
-  strCall = ["sudo","chrt","--rr","70","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l","1","-s","1"]
+  strCall = ["sudo","chrt","--rr","70","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l",int(not bInvertPins),"-s","1"]
   ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE)
 
   while True:
@@ -216,6 +227,11 @@ def timeToBin():
 
     # concatenate digits
     bin = bin + binDigit
+
+  # invert binary output
+  if bInvertPins:
+    bin = [not binTmp for binTmp in bin]
+
   return bin
 
 def updateShiftRegister():
@@ -230,7 +246,7 @@ def updateShiftRegister():
     tStartBit = time.process_time_ns()
 
     # set clock high
-    GPIO.output(pinClock, GPIO.HIGH)
+    GPIO.output(pinClock, clkHi)
 
     # wait 1/4 cycle
     time.sleep((tClock * 0.25) - (float(tStartBit - time.process_time_ns())*1E-9))
@@ -242,7 +258,7 @@ def updateShiftRegister():
     time.sleep((tClock * 0.75) - (float(tStartBit - time.process_time_ns())*1E-9))
 
     # set clock low
-    GPIO.output(pinClock, GPIO.LOW)
+    GPIO.output(pinClock, clkLo)
 
     # wait 1/4 cycle
     time.sleep((tClock * 1.00) - (float(tStartBit - time.process_time_ns())*1E-9))
