@@ -11,10 +11,10 @@ import math, numpy
 pinOE     = 13
 # GPIO 12, pin 32, PWM0
 pinStrobe = 12
-# GPIO  5, pin 29
-pinClock  =  5
-# GPIO  6, pin 31
-pinData   = 6
+# GPIO 16, pin 23
+pinClock  = 16
+# GPIO 15, pin 22
+pinData   = 15
 # all pins to drive except ones handled by hardware timers
 pins = (pinClock, pinData)
 
