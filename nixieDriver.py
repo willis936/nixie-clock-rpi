@@ -16,7 +16,7 @@ pinClock  = 16
 # GPIO 15, pin 22
 pinData   = 15
 # all pins to drive except ones handled by hardware timers
-pins = (pinClock, pinData)
+pins = (pinOE, pinClock, pinData)
 
 # invert logical outputs (needed for level shifters)
 bInvertPins = True
@@ -29,6 +29,8 @@ digitNoDecimal = (1, 3)
 fPWM  = 200
 # PWM duty cycle
 dcPWM = 100.0
+if bInvertPins:
+  dcPWM = 100.0 - dcPWM
 # offset (seconds) to strobe prior to start-of-second
 tPreEmpt = 30E-6
 # max number of samples for stats
@@ -41,7 +43,7 @@ bAntiPoison = True
 # number of bits in shift register
 nBitsRegister = 64
 # clock rate for shift register
-fClock = nBitsRegister * 4
+fClock = 10e3
 tClock = 1 / float(fClock)
 
 # shared variable that gets updated by checkPPSIn in a separate thread
@@ -95,11 +97,11 @@ def initDriver():
     print("Initializing GPIO %2d."%(pinInit))
     # set up GPIO pin
     GPIO.setup(pinInit, GPIO.OUT)
-    GPIO.output(pinInit, not bInvertPins)
+    GPIO.output(pinInit, bInvertPins)
 
 def stopDriver():
-  print("Stopping PWM on pin %2d."%(pinOE))
-  pPWM.stop()
+  #print("Stopping PWM on pin %2d."%(pinOE))
+  #pPWM.stop()
   print("Freeing GPIO.")
   GPIO.cleanup()
 
@@ -284,9 +286,9 @@ threadPPSOut.start()
 initDriver()
 
 # set up strobe output
-pPWM = pigpio.pi()
-pPWM.hardware_PWM(pinOE, fPWM, round(10000 * dcPWM))
-print("PWM (f = %d Hz, dc = %.1f %%) starting on pin %2d."%(fPWM, dcPWM, pinOE))
+#pPWM = pigpio.pi()
+#pPWM.hardware_PWM(pinOE, fPWM, round(10000 * dcPWM))
+#print("PWM (f = %d Hz, dc = %.1f %%) starting on pin %2d."%(fPWM, dcPWM, pinOE))
 
 # main loop
 
