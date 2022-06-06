@@ -154,7 +154,7 @@ def checkPPSIn():
 def drivePPSOut():
   print("Starting PPS driving thread.")
 
-  strCall = ["sudo","chrt","--rr","70","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l",int(not bInvertPins),"-s","1"]
+  strCall = ["sudo","chrt","--rr","70","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l",str(int(not bInvertPins)),"-s","1"]
   ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE)
 
   while True:
