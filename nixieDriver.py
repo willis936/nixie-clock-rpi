@@ -11,12 +11,12 @@ import math, numpy
 pinOE     = 13
 # GPIO 12, pin 32, PWM0
 pinStrobe = 12
-# GPIO 16, pin 23
-pinClock  = 16
-# GPIO 15, pin 22
-pinData   = 15
+# GPIO 21, pin 40
+pinClock  = 21
+# GPIO 20, pin 38
+pinData   = 20
 # all pins to drive except ones handled by hardware timers
-pins = (pinOE, pinClock, pinData)
+pins = (pinStrobe, pinClock, pinData)
 
 # invert logical outputs (needed for level shifters)
 bInvertPins = True
@@ -31,10 +31,26 @@ fPWM  = 200
 dcPWM = 100.0
 if bInvertPins:
   dcPWM = 100.0 - dcPWM
+# one billion
+cBillion = int(1E9)
 # offset (seconds) to strobe prior to start-of-second
-tPreEmpt = 30E-6
+tPreEmpt = -56e-3
+# offset (seconds) for python self-time
+tCode = 3E-6
+# minimum window time
+tMinWin = int(tCode * cBillion)
+# offset (seconds) from start-of-second to start busy-wait
+tBusyWindow = 20E-3
+
+# busy waiter threshold (nanoseconds)
+tBusyThresh = int((1 - tCode - tPreEmpt) * cBillion)
+# handle delay rather than pre-emption
+bDelayPPS = tBusyThresh > cBillion - tMinWin
+if bDelayPPS:
+  tBusyThresh2 = tBusyThresh - cBillion
+  tBusyThresh  = cBillion - tMinWin
 # max number of samples for stats
-nMaxStats = 60 * 60 * 24
+nMaxStats = int(60 * 60 * 24)
 
 
 # enable anti-poisoning routine
@@ -43,7 +59,7 @@ bAntiPoison = True
 # number of bits in shift register
 nBitsRegister = 64
 # clock rate for shift register
-fClock = 10e3
+fClock = nBitsRegister * 4
 tClock = 1 / float(fClock)
 
 # shared variable that gets updated by checkPPSIn in a separate thread
@@ -92,16 +108,15 @@ def suppress_stdout_stderr():
 
 def initDriver():
   waitForPigpio()
-  GPIO.setmode(GPIO.BOARD)
+  GPIO.setmode(GPIO.BCM)
   for pinInit in pins:
     print("Initializing GPIO %2d."%(pinInit))
     # set up GPIO pin
-    GPIO.setup(pinInit, GPIO.OUT)
-    GPIO.output(pinInit, bInvertPins)
+    GPIO.setup(pinInit, GPIO.OUT, initial=bInvertPins)
 
 def stopDriver():
-  #print("Stopping PWM on pin %2d."%(pinOE))
-  #pPWM.stop()
+  print("Stopping PWM on pin %2d."%(pinOE))
+  pPWM.stop()
   print("Freeing GPIO.")
   GPIO.cleanup()
 
@@ -152,43 +167,6 @@ def checkPPSIn():
     ppsInProcess.terminate()
     ppsInOutput = str(ppsInProcess.stdout.peek())
     bPPSIn = ppsInOutput.find("sequence") != -1
-
-def drivePPSOut():
-  print("Starting PPS driving thread.")
-
-  strCall = ["sudo","chrt","--rr","70","pps-out","-g",str(pinStrobe),"-e",str(round(tPreEmpt  *1E6)),"-m",str(round(0.1*1E6)),"-l",str(int(not bInvertPins)),"-s","1"]
-  ppsOutProcess = subprocess.Popen(strCall, stdout=subprocess.PIPE)
-
-  while True:
-    # collect timing error stats
-    time.sleep(0.5)
-
-    bCheckStdOut = True
-    while bCheckStdOut:
-      line = ppsOutProcess.stdout.readline().rstrip()
-
-      bCheckStdOut = len(line) > 1
-      try:
-        line = [int(i) for i in line.split()]
-      except:
-        continue
-      else:
-        pass
-
-      if len(line) != 5:
-        continue
-
-      tErrTmp = round(line[2])
-      while len(tErr) >= nMaxStats:
-        tErr.pop(0)
-      tErr.append(tErrTmp)
-      print("pre-empt error: %d us"%tErrTmp)
-
-    if bStopThreads:
-      print("Stopping PPS driving thread.")
-      ppsOutProcess.terminate()
-      ppsOutProcess.wait()
-      break
 
 def timeToBin():
   # return binary tuple of current time for nixie tubes
@@ -278,17 +256,13 @@ signal.signal(signal.SIGTERM, signal_handler)
 threadPPSIn = threading.Thread(target = checkPPSIn)
 threadPPSIn.start()
 
-# start PPS Out driving
-threadPPSOut = threading.Thread(target = drivePPSOut)
-threadPPSOut.start()
-
 # initialize pins
 initDriver()
 
-# set up strobe output
-#pPWM = pigpio.pi()
-#pPWM.hardware_PWM(pinOE, fPWM, round(10000 * dcPWM))
-#print("PWM (f = %d Hz, dc = %.1f %%) starting on pin %2d."%(fPWM, dcPWM, pinOE))
+# set up PWM Output Enable output
+pPWM = pigpio.pi()
+pPWM.hardware_PWM(pinOE, fPWM, round(10000 * dcPWM))
+print("PWM (f = %d Hz, dc = %.1f %%) starting on pin %2d."%(fPWM, dcPWM, pinOE))
 
 # main loop
 
@@ -296,8 +270,14 @@ initDriver()
 time.sleep(1 - time.time()%1)
 
 while True:
+  # wait until 0.10 second
+  time.sleep(0.10 - time.time()%1 - tPreEmpt)
+
+  # lower strobe
+  GPIO.output(pinStrobe, clkLo)
+
   # wait until 0.25 second
-  time.sleep(0.25 - time.time()%1)
+  time.sleep(0.25 - time.time()%1 - tPreEmpt)
 
   # update shift register
   updateShiftRegister()
@@ -305,5 +285,32 @@ while True:
   # run garbage collection just before a long wait
   gc.collect()
 
+  # wait until next second, minus busy-wait window
+  time.sleep(1 - time.time()%1 - tBusyWindow)
+
+  # busy-wait until pre-empt time
+  while time.time_ns()%cBillion < tBusyThresh:
+    pass
+  if bDelayPPS:
+    # handle delay rather than pre-emption
+    bCont = True
+    while bCont:
+      tNow = time.time_ns()%cBillion
+      bCont = tNow > (0.5 * cBillion) or tNow < tBusyThresh2
+
+  tErrTmp = 1 - time.time()%1 - tPreEmpt
+  if tErrTmp > 0.5:
+    tErrTmp = 1 - tErrTmp
+  tErrTmp = tErrTmp * 1E6
+  while len(tErr) >= nMaxStats:
+    tErr.pop(0)
+  tErr.append(tErrTmp)
+  print("pre-empt error: %3.3f us"%tErrTmp)
+
+  # strobe output
+  GPIO.output(pinStrobe, clkHi)
+
   # sleep until start of second
-  time.sleep(1 - time.time()%1)
+  tEndOfSecond = time.time()%1
+  if tEndOfSecond > 0.5 and tEndOfSecond < (1 - tCode):
+    time.sleep(1 - tEndOfSecond)

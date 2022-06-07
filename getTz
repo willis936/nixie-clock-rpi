@@ -1,4 +1,4 @@
 #!/bin/bash
 
-sudo LLVM_CONFIG=llvm-config-11 python -m pip install --upgrade timezonefinder[numba] gpsd-py3
+sudo LLVM_CONFIG=llvm-config-11 python -m pip install --upgrade timezonefinder[numba]
 sudo python /usr/local/bin/getTz.py
