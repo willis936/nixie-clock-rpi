@@ -9,12 +9,14 @@ sudo apt -y install pigpiod gpsd gpsd-clients gpsd-tools llvm-11
 sudo LLVM_CONFIG=llvm-config-11 python -m pip install --upgrade timezonefinder[numba] gpsd-py3 RPi.GPIO pigpio
 # start GPIO daemon
 sudo systemctl enable pigpiod
+sudo systemctl stop pigpiod
 sudo sed -i 's=/usr/bin/pigpiod -l=chrt --rr 99 /usr/bin/pigpiod -l=g' /lib/systemd/system/pigpiod.service
 sudo systemctl daemon-reload
 sudo systemctl start pigpiod
+sudo systemctl restart pigpiod
 
 # copy scripts to bin directory
-sudo cp nixieDriver nixieDriver.py getTz getTz.py pps-out /usr/local/bin
+sudo cp nixieDriver nixieDriver.py getTz getTz.py /usr/local/bin
 
 
 # link timezone setting script to cron and init
